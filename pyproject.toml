@@ -1,0 +1,34 @@
+﻿[build-system]
+requires = ["setuptools>=70"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "docufind-local"
+version = "0.1.0"
+description = "Local Windows file indexing and search application."
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "PySide6>=6.7",
+    "rapidfuzz>=3.9",
+    "pymorphy3>=2.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.2",
+    "pyinstaller>=6.10",
+]
+
+[project.scripts]
+docufind-dev = "app.dev_cli:main"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["app*"]
+
+

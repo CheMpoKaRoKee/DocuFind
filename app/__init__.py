@@ -1,0 +1,2 @@
+"""DocuFind Local application package."""
+
