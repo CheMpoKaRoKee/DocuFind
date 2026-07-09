@@ -1,4 +1,4 @@
-﻿[build-system]
+[build-system]
 requires = ["setuptools>=70"]
 build-backend = "setuptools.build_meta"
 
@@ -8,6 +8,7 @@ version = "0.1.0"
 description = "Local Windows file indexing and search application."
 readme = "README.md"
 requires-python = ">=3.11"
+license = "MIT"
 dependencies = [
     "PySide6>=6.7",
     "rapidfuzz>=3.9",
@@ -30,5 +31,3 @@ pythonpath = ["."]
 [tool.setuptools.packages.find]
 where = ["."]
 include = ["app*"]
-
-
