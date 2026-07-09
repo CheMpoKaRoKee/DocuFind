@@ -1,63 +1,67 @@
+# Python bytecode/cache
 __pycache__/
 *.py[cod]
+*$py.class
 .pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Virtual environments
 .venv/
 venv/
+env/
+ENV/
+
+# Build/package artifacts
 build/
 dist/
 *.egg-info/
-logs/
+.eggs/
+*.manifest
+*.toc
+
+# Local app runtime data
 data/
+logs/
 backups/
+*.log
+*.sqlite
+*.sqlite3
+*.db
+*.db-wal
+*.db-shm
 
-# AI / agent workflow files
-AGENT.md
-Agent.md
-agent.md
-AGENTS.md
-agents.md
-PROMPT.md
-Prompt.md
-Promt.md
-prompt.md
-promt.md
-PROJECT_STATE.md
-TASKS.md
-DEVELOPMENT_STATE.md
-CODEX.md
-CODEX_NOTES.md
-AI_NOTES.md
-AI_PLAN.md
-LLM_NOTES.md
-CHATGPT.md
-CLAUDE.md
-GEMINI.md
-DECISIONS.md
-aider.chat.history.md
-.aider*
+# Local config/secrets
+.env
+.env.*
+!.env.example
+*.local
+config.local.*
 
-# AI / agent workflow folders
-.codex/
-.openai/
-.chatgpt/
-.ai/
-.llm/
-.cursor/
-.continue/
-.windsurf/
-prompts/
-agent/
-agents/
-agent_logs/
+# OS/editor files
+.DS_Store
+Thumbs.db
+desktop.ini
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+*.bak
+*.old
+
+# Local development notes
+NOTES.local.md
+DEVELOPMENT_NOTES.md
+LOCAL_NOTES.md
+*_local.md
+*.local.md
 scratch/
 scratchpad/
 planning/
-
-# Prompt/state filename patterns
-*_PROMPT.md
-*_prompt.md
-*prompt*.md
-*Prompt*.md
-*Promt*.md
-*_STATE.md
-*_state.md
