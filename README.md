@@ -1,95 +1,171 @@
-﻿# DocuFind Local
+# DocuFind Local
 
-## Русский
+**DocuFind Local** is a Windows desktop application for local file indexing and search. It indexes selected folders and helps find files by name, path, content, Russian word forms, and typo-tolerant fuzzy matches without sending user data to external services.
 
-DocuFind Local — локальное Windows-приложение для индексирования выбранных папок и поиска по имени файла, пути и содержимому. Приложение показывает найденные совпадения, preview-фрагмент, поддерживает русские словоформы, fuzzy-поиск и безопасное редактирование поддерживаемых текстовых файлов с backup перед сохранением.
+> Status: MVP. The project includes a PySide6 UI, SQLite/FTS5 search index, Russian morphology, safe text editing, tests, and PyInstaller build configuration.
 
-### Возможности MVP
+---
 
-- Индексация выбранной папки.
-- Поиск по имени файла, пути и содержимому.
-- Поддержка русской морфологии через fallback-анализатор, если `pymorphy3` недоступен.
-- Fuzzy-поиск по опечаткам.
-- Preview найденного фрагмента и предупреждение о stale state.
-- Безопасный редактор текстовых файлов: conflict detection, backup, atomic save, reindex after save.
-- Переключение интерфейса RU/EN.
-- Логи в portable/installed runtime-папках.
+## Why this project exists
 
-### Запуск из исходников
+Windows file search is often too limited when a user needs to find an exact text fragment inside local folders, especially with Russian word forms or typos. DocuFind Local provides a local-first search workflow with preview, match positions, and safe editing for supported text files.
 
-Рекомендуемый интерпретатор для UI: обычный Python 3.13, не free-threaded `3.13t`.
+## Features
+
+- Index selected local folders.
+- Search by filename, path, and file content.
+- Full-text search through SQLite FTS5.
+- Russian morphology through `pymorphy3` with a deterministic fallback for restricted environments.
+- Typo-tolerant fuzzy search through RapidFuzz.
+- Preview matched fragments with line/column metadata.
+- Safe text editor for supported text files:
+  - external-change detection;
+  - backup before save;
+  - atomic save through a temporary file;
+  - single-file reindex after save.
+- Background workers for indexing, search, and reindexing without blocking the UI.
+- RU/EN interface.
+- Portable/runtime folders for database, logs, and backups.
+- Windows executable build through PyInstaller.
+- Unit/integration tests for storage, scanner, extraction, morphology, indexing, search, fuzzy search, workers, UI, editor, and build configuration.
+
+## Technical highlights
+
+| Area | Implementation |
+|---|---|
+| Desktop UI | PySide6 |
+| Storage | SQLite, WAL, migrations |
+| Full-text search | SQLite FTS5 |
+| Fuzzy search | RapidFuzz |
+| Russian NLP | pymorphy3 + fallback analyzer |
+| Indexing | scanner, filters, text extraction, chunks, terms, lemmas |
+| Editor safety | conflict detection, backup, atomic save |
+| Background tasks | IndexWorker, SearchWorker, ReindexWorker |
+| Packaging | PyInstaller spec + build script |
+| Testing | unittest suites, quality gates |
+
+## Architecture
+
+```mermaid
+flowchart TD
+    UI[PySide6 UI] --> Workers[Background Workers]
+    UI --> Preview[Preview Panel]
+    UI --> Editor[Safe Editor]
+
+    Workers --> Indexer[Index Service]
+    Workers --> Search[Search Service]
+    Editor --> SafeSave[Safe Save Service]
+    SafeSave --> Backup[Backup Service]
+    SafeSave --> Reindex[Single-file Reindex]
+
+    Indexer --> Extractor[Text Extraction]
+    Indexer --> NLP[Russian Morphology]
+    Indexer --> Storage[(SQLite + FTS5)]
+
+    Search --> QueryParser[Query Parser]
+    Search --> FTS[FTS Search]
+    Search --> LemmaSearch[Lemma Search]
+    Search --> Fuzzy[Fuzzy Search]
+    FTS --> Storage
+    LemmaSearch --> Storage
+    Fuzzy --> Storage
+```
+
+## Main workflow
+
+1. The user selects a local folder.
+2. The application scans files and indexes supported formats.
+3. Text is split into chunks, normalized, and stored in SQLite/FTS5.
+4. The user searches by filename, path, content, word forms, or typos.
+5. The application returns matching files, snippets, line/column positions, and preview.
+6. If a file is edited, the app creates a backup, checks for external changes, performs atomic save, and reindexes the saved file.
+
+## Requirements
+
+- Windows.
+- Python 3.11+.
+- Regular Python 3.13 is recommended for UI/build/release work. Free-threaded `3.13t` is not recommended because some binary dependencies may be unavailable.
+
+## Install from source
+
+```powershell
+py -3.13 -m venv .venv
+.\.venv\Scripts\Activate.ps1
+python -m pip install --upgrade pip
+python -m pip install -e ".[dev]"
+```
+
+## Run
+
+```powershell
+python -m app.main
+```
+
+Alternative without an activated virtual environment:
 
 ```powershell
 py -3.13 -m app.main
 ```
 
-### Тесты
+## Tests
+
+Run the full test suite:
 
 ```powershell
-py -3.13 -m unittest tests.test_stage2_app_paths_i18n tests.test_stage3_database tests.test_stage4_scanner_filter tests.test_stage5_text_extraction tests.test_stage6_russian_morphology tests.test_stage7_chunker tests.test_stage8_index_service tests.test_stage9_deleted_lifecycle tests.test_stage10_query_parser_fts tests.test_stage11_search_core tests.test_stage12_fuzzy_search tests.test_stage13_workers tests.test_stage14_ui tests.test_stage15_editor tests.test_stage16_quality_gates tests.test_stage17_build
+python -m unittest discover -s tests -p "test_*.py"
 ```
 
-### Сборка Windows-приложения
+Manual release checks are documented in [`RELEASE_CHECKLIST.md`](RELEASE_CHECKLIST.md).
 
-```powershell
-py -3.13 build_exe.py
-```
-
-Готовый файл ожидается в `dist/DocuFindLocal.exe`. Папки `dist/` и `build/` не коммитятся.
-
-### Релизная проверка и ручной тест
-
-См. подробный чеклист: RELEASE_CHECKLIST.md.
-
-### Runtime-папки
-
-- Portable mode: `./data/`, `./logs/`, `./backups/`.
-- Installed mode: `%LOCALAPPDATA%\DocuFind\`.
-
-## English
-
-DocuFind Local is a local Windows application for indexing selected folders and searching with filename, path, and file content. It shows matches, preview snippets, supports Russian word forms, fuzzy search, and safe editing for supported text files with backups before save.
-
-### MVP Features
-
-- Index a selected folder.
-- Search with filename, path, and content.
-- Russian morphology through the fallback analyzer when `pymorphy3` is unavailable.
-- Typo-tolerant fuzzy search.
-- Preview for matched snippets and stale-state warnings.
-- Safe text editor: conflict detection, backup, atomic save, reindex after save.
-- RU/EN interface switching.
-- Logs in portable/installed runtime folders.
-
-### Run From Source
-
-Use regular Python 3.13 for the UI, not free-threaded `3.13t`.
-
-```powershell
-py -3.13 -m app.main
-```
-
-### Tests
-
-```powershell
-py -3.13 -m unittest tests.test_stage2_app_paths_i18n tests.test_stage3_database tests.test_stage4_scanner_filter tests.test_stage5_text_extraction tests.test_stage6_russian_morphology tests.test_stage7_chunker tests.test_stage8_index_service tests.test_stage9_deleted_lifecycle tests.test_stage10_query_parser_fts tests.test_stage11_search_core tests.test_stage12_fuzzy_search tests.test_stage13_workers tests.test_stage14_ui tests.test_stage15_editor tests.test_stage16_quality_gates tests.test_stage17_build
-```
-
-### Build Windows Executable
+## Build Windows executable
 
 ```powershell
 py -3.13 build_exe.py
 ```
 
-The executable is expected at `dist/DocuFindLocal.exe`. The `dist/` and `build/` folders are not committed.
+Expected output:
 
-### Release Validation and Manual Test
+```text
+dist\DocuFindLocal.exe
+```
 
-See the detailed checklist: RELEASE_CHECKLIST.md.
+The `dist/` and `build/` folders are not committed.
 
-### Runtime Folders
+## Runtime folders
 
-- Portable mode: `./data/`, `./logs/`, `./backups/`.
-- Installed mode: `%LOCALAPPDATA%\DocuFind\`.
+Portable/dev mode:
 
+```text
+data/
+logs/
+backups/
+```
 
+Installed mode:
+
+```text
+%LOCALAPPDATA%\DocuFind\
+```
+
+## Privacy and safety
+
+- Indexing is performed locally.
+- File contents are not sent to external services.
+- The editor creates a backup before saving.
+- If a file changed externally after being opened, save is blocked until reload.
+- Logs should not contain full user file contents.
+
+## MVP limitations
+
+- The project targets Windows desktop usage, not web or cloud deployment.
+- Single-file reindex updates only the selected file. Deleted sibling files are detected during full folder reindex.
+- Russian morphology quality depends on `pymorphy3`; fallback behavior is kept for compatibility but is not a full analyzer replacement.
+- PyInstaller executable size can be large because it includes PySide6 and morphology dictionaries.
+
+## Roadmap
+
+- Add screenshots/GIF demo to the README.
+- Publish a GitHub Release with a built Windows executable.
+- Add indexing benchmarks for large folders.
+- Improve navigation across multiple matches inside one file.
+- Expand supported file formats.
