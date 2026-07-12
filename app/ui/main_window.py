@@ -5,8 +5,9 @@ from __future__ import annotations
 from collections.abc import Callable
 from dataclasses import replace
 from pathlib import Path
+import subprocess
 
-from PySide6.QtCore import QThread, Signal
+from PySide6.QtCore import Qt, QThread, Signal
 from PySide6.QtWidgets import (
     QFileDialog,
     QMainWindow,
@@ -27,12 +28,13 @@ from app.storage.index_folder_repository import IndexFolderRepository
 from app.storage.settings_repository import SettingsRepository
 from app.ui.editor_panel import EditorPanel
 from app.ui.index_panel import IndexPanel
-from app.ui.preview_panel import PreviewPanel
 from app.ui.results_panel import ResultsPanel
 from app.ui.search_panel import SearchPanel
 from app.ui.settings_dialog import SettingsDialog
+from app.ui.theme import apply_theme
 from app.utils.app_paths import AppPaths
 from app.utils.path_normalizer import normalize_path
+from app.workers.clear_index_worker import ClearIndexWorker
 from app.workers.index_worker import IndexWorker
 from app.workers.search_worker import SearchWorker
 
@@ -42,14 +44,25 @@ LANGUAGE_SETTING = "language"
 class WorkerThread(QThread):
     completed = Signal(object)
     failed = Signal(str)
+    progress = Signal(object)
 
-    def __init__(self, task: Callable[[], object], parent: QWidget | None = None) -> None:
+    def __init__(
+        self,
+        task: Callable[[], object] | Callable[[Callable[[object], None]], object],
+        parent: QWidget | None = None,
+        *,
+        with_progress: bool = False,
+    ) -> None:
         super().__init__(parent)
         self.task = task
+        self.with_progress = with_progress
 
     def run(self) -> None:
         try:
-            self.completed.emit(self.task())
+            if self.with_progress:
+                self.completed.emit(self.task(self.progress.emit))  # type: ignore[misc]
+            else:
+                self.completed.emit(self.task())  # type: ignore[operator]
         except Exception as exc:
             self.failed.emit(str(exc))
 
@@ -73,11 +86,11 @@ class MainWindow(QMainWindow):
         self._active_thread: WorkerThread | None = None
         self._active_worker: object | None = None
         self._reindex_required = False
+        self._cancellation_requested = False
 
         self.index_panel = IndexPanel(self.i18n, self)
         self.search_panel = SearchPanel(self.i18n, self)
         self.results_panel = ResultsPanel(self.i18n, self)
-        self.preview_panel = PreviewPanel(self.i18n, self)
         self.editor_panel = EditorPanel(
             self.i18n,
             paths=self.paths,
@@ -89,6 +102,7 @@ class MainWindow(QMainWindow):
         self.settings_button.setObjectName("settingsButton")
 
         self._build_layout()
+        apply_theme(self)
         self._connect_signals()
         self._set_initial_folder()
         self.retranslate()
@@ -100,9 +114,8 @@ class MainWindow(QMainWindow):
         self.index_panel.retranslate()
         self.search_panel.retranslate()
         self.results_panel.retranslate()
-        self.preview_panel.retranslate()
         self.editor_panel.retranslate()
-        self.content_tabs.setTabText(0, self.i18n.translate("preview.title"))
+        self.content_tabs.setTabText(0, self.i18n.translate("results.title"))
         self.content_tabs.setTabText(1, self.i18n.translate("editor.title"))
         self.statusBar().showMessage(self.i18n.translate("status.ready"))
         self._refresh_index_state()
@@ -121,14 +134,20 @@ class MainWindow(QMainWindow):
         self.addToolBar(toolbar)
 
         left_panel = QWidget(self)
+        left_panel.setObjectName("leftPanel")
+        left_panel.setMinimumWidth(360)
         left_layout = QVBoxLayout(left_panel)
+        left_layout.setContentsMargins(10, 10, 10, 10)
+        left_layout.setSpacing(12)
         left_layout.addWidget(self.index_panel)
         left_layout.addWidget(self.search_panel)
-        left_layout.addWidget(self.results_panel, 1)
+        left_layout.addStretch(1)
 
         self.content_tabs = QTabWidget(self)
         self.content_tabs.setObjectName("contentTabs")
-        self.content_tabs.addTab(self.preview_panel, self.i18n.translate("preview.title"))
+        self.content_tabs.setMinimumWidth(520)
+        self.results_panel.setMinimumWidth(520)
+        self.content_tabs.addTab(self.results_panel, self.i18n.translate("results.title"))
         self.content_tabs.addTab(self.editor_panel, self.i18n.translate("editor.title"))
 
         splitter = QSplitter(self)
@@ -137,6 +156,7 @@ class MainWindow(QMainWindow):
         splitter.addWidget(self.content_tabs)
         splitter.setStretchFactor(0, 2)
         splitter.setStretchFactor(1, 3)
+        splitter.setSizes([420, 760])
         self.setCentralWidget(splitter)
         self.setStatusBar(QStatusBar(self))
         self.resize(1100, 700)
@@ -145,11 +165,13 @@ class MainWindow(QMainWindow):
         self.index_panel.select_folder_requested.connect(self._select_folder)
         self.index_panel.index_requested.connect(self._start_index)
         self.index_panel.cancel_requested.connect(self._cancel_active_worker)
+        self.index_panel.clear_index_requested.connect(self._clear_index)
         self.search_panel.search_requested.connect(self._start_search)
-        self.results_panel.result_selected.connect(self.preview_panel.set_result)
         self.results_panel.result_selected.connect(self.editor_panel.set_result)
+        self.results_panel.open_in_explorer_requested.connect(self._open_result_in_explorer)
         self.editor_panel.saved.connect(lambda _path: self.statusBar().showMessage(self.i18n.translate("editor.saved")))
         self.editor_panel.saved.connect(lambda _path: self._refresh_index_state())
+        self.editor_panel.save_partial.connect(self._show_partial_save)
         self.editor_panel.save_failed.connect(self._show_error)
         self.settings_button.clicked.connect(self._open_settings)
 
@@ -161,16 +183,27 @@ class MainWindow(QMainWindow):
             self._persist_index_folder(path)
             self._refresh_index_state()
 
+    def _show_partial_save(self, _path: Path, status: str) -> None:
+        key = "editor.saved_reindex_cancelled" if status == "cancelled" else "editor.saved_reindex_failed"
+        self.statusBar().showMessage(self.i18n.translate(key))
+
+    def _open_result_in_explorer(self, path_text: str) -> None:
+        try:
+            subprocess.Popen(["explorer.exe", "/select,", path_text])
+        except OSError as exc:
+            self._show_error(self.i18n.translate("results.open_in_explorer_failed", error=str(exc)))
+
     def _start_index(self, folder: Path) -> None:
         if self._active_thread is not None:
             return
         self._persist_index_folder(folder)
+        self._cancellation_requested = False
         worker = IndexWorker(self.database, folder, settings=self.settings)
         self._active_worker = worker
         self._set_busy(True)
         self._refresh_index_state(running=True)
         self.statusBar().showMessage(self.i18n.translate("status.indexing"))
-        self._run_thread(worker.run, self._handle_index_result)
+        self._run_thread(worker.run, self._handle_index_result, on_progress=self._handle_index_progress)
 
     def _start_search(self, query: str) -> None:
         if self._active_thread is not None or not query:
@@ -181,11 +214,19 @@ class MainWindow(QMainWindow):
         self.statusBar().showMessage(self.i18n.translate("status.searching"))
         self._run_thread(worker.run, self._handle_search_result)
 
-    def _run_thread(self, task: Callable[[], object], on_completed: Callable[[object], None]) -> None:
-        thread = WorkerThread(task, self)
+    def _run_thread(
+        self,
+        task: Callable[[], object] | Callable[[Callable[[object], None]], object],
+        on_completed: Callable[[object], None],
+        *,
+        on_progress: Callable[[object], None] | None = None,
+    ) -> None:
+        thread = WorkerThread(task, self, with_progress=on_progress is not None)
         self._active_thread = thread
         thread.completed.connect(on_completed)
         thread.failed.connect(self._handle_thread_error)
+        if on_progress is not None:
+            thread.progress.connect(on_progress)
         thread.finished.connect(self._clear_thread)
         thread.start()
 
@@ -193,7 +234,61 @@ class MainWindow(QMainWindow):
         cancel = getattr(self._active_worker, "cancel", None)
         if callable(cancel):
             cancel()
+            self._cancellation_requested = True
+            if isinstance(self._active_worker, (IndexWorker, ClearIndexWorker)):
+                self.index_panel.set_cancelling()
+                self._refresh_index_state()
             self.statusBar().showMessage(self.i18n.translate("status.cancelling"))
+
+    def _handle_index_progress(self, progress: object) -> None:
+        self.index_panel.set_progress(progress)
+        phase = getattr(progress, "phase", "")
+        if self._cancellation_requested and phase not in {"cancelled", "completed", "failed"}:
+            self.index_panel.set_cancelling()
+
+    def _clear_index(self) -> None:
+        if self._active_thread is not None:
+            self.statusBar().showMessage(self.i18n.translate("index.clear_busy"))
+            return
+        response = QMessageBox.question(
+            self,
+            self.i18n.translate("index.clear_title"),
+            self.i18n.translate("index.clear_confirm"),
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
+        )
+        if response != QMessageBox.StandardButton.Yes:
+            return
+        self._cancellation_requested = False
+        worker = ClearIndexWorker(self.database)
+        self._active_worker = worker
+        self._set_busy(True)
+        self._refresh_index_state(running=True)
+        self.statusBar().showMessage(self.i18n.translate("index.clear_running"))
+        self._run_thread(worker.run, self._handle_clear_index_result, on_progress=self.index_panel.set_progress)
+
+    def _handle_clear_index_result(self, result: object) -> None:
+        status = getattr(result, "status", "failed")
+        if status == "cancelled":
+            self.statusBar().showMessage(self.i18n.translate("status.cancelled"))
+            self._refresh_index_state()
+            return
+        if status != "completed":
+            self._show_error(getattr(result, "error", None) or self.i18n.translate("common.error"))
+            return
+        summary = getattr(result, "payload", None)
+        self._reindex_required = False
+        self.index_panel.reset_progress()
+        self.results_panel.set_results([])
+        self.editor_panel.clear()
+        self._refresh_index_state()
+        self.statusBar().showMessage(
+            self.i18n.translate(
+                "index.clear_completed",
+                documents=getattr(summary, "documents_deleted", 0),
+                chunks=getattr(summary, "chunks_deleted", 0),
+            )
+        )
 
     def _handle_index_result(self, result: object) -> None:
         status = getattr(result, "status", "failed")
@@ -219,11 +314,19 @@ class MainWindow(QMainWindow):
         if status == "completed":
             results = getattr(result, "payload", []) or []
             self.results_panel.set_results(results)
+            if not results:
+                self.editor_panel.clear()
             self.statusBar().showMessage(self.i18n.translate("status.search_completed", count=len(results)))
         elif status == "cancelled":
+            self._clear_search_view()
             self.statusBar().showMessage(self.i18n.translate("status.cancelled"))
         else:
+            self._clear_search_view()
             self._show_error(getattr(result, "error", None) or self.i18n.translate("common.error"))
+
+    def _clear_search_view(self) -> None:
+        self.results_panel.set_results([])
+        self.editor_panel.clear()
 
     def _handle_thread_error(self, message: str) -> None:
         self._show_error(message)
@@ -233,6 +336,7 @@ class MainWindow(QMainWindow):
             self._active_thread.deleteLater()
         self._active_thread = None
         self._active_worker = None
+        self._cancellation_requested = False
         self._set_busy(False)
         self._refresh_index_state()
 
@@ -270,13 +374,7 @@ class MainWindow(QMainWindow):
     def _load_settings(self) -> ApplicationSettings:
         try:
             with self.database.session() as connection:
-                settings = load_settings(SettingsRepository(connection), self.paths)
-                if settings.index_folders:
-                    return settings
-                rows = connection.execute("SELECT path FROM index_folders WHERE enabled = 1 ORDER BY path_norm").fetchall()
-            if rows:
-                return replace(settings, index_folders=[str(row["path"]) for row in rows])
-            return settings
+                return load_settings(SettingsRepository(connection), self.paths)
         except Exception:
             return ApplicationSettings.defaults(self.paths)
 
@@ -301,7 +399,11 @@ class MainWindow(QMainWindow):
         except Exception as exc:
             self.index_panel.set_index_state_text(str(exc))
             return
-        if running or isinstance(self._active_worker, IndexWorker):
+        if self._cancellation_requested and isinstance(self._active_worker, (IndexWorker, ClearIndexWorker)):
+            status = self.i18n.translate("index.status.cancelling")
+        elif isinstance(self._active_worker, ClearIndexWorker):
+            status = self.i18n.translate("index.status.clearing")
+        elif running or isinstance(self._active_worker, IndexWorker):
             status = self.i18n.translate("index.status.running")
         elif self._reindex_required:
             status = self.i18n.translate("index.status.reindex_required")

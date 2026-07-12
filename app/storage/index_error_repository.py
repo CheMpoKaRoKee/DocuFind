@@ -19,4 +19,3 @@ class IndexErrorRepository:
             (run_id, path, error_type, error_message, datetime.now(UTC).isoformat()),
         )
         return int(cursor.lastrowid)
-

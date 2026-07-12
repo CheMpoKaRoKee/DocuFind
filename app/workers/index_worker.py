@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 from pathlib import Path
+from collections.abc import Callable
 
 from app.indexer.file_filter import FileFilter
 from app.indexer.folder_scanner import FolderScanner
 from app.indexer.index_service import IndexService
+from app.models.index_progress import IndexProgress
 from app.settings import ApplicationSettings, load_settings
 from app.storage.database import Database
 from app.storage.settings_repository import SettingsRepository
@@ -38,7 +40,7 @@ class IndexWorker:
     def resume(self) -> None:
         self.state.resume()
 
-    def run(self) -> WorkerResult:
+    def run(self, progress_callback: Callable[[IndexProgress], None] | None = None) -> WorkerResult:
         if not self.state.checkpoint():
             return WorkerResult(status="cancelled")
         try:
@@ -50,7 +52,11 @@ class IndexWorker:
                 supported_extensions=frozenset(settings.enabled_extensions),
             )
             scanner = FolderScanner(file_filter=file_filter, path_rules=path_rules)
-            summary = IndexService(self.database, scanner=scanner).index_folder(self.folder)
+            summary = IndexService(self.database, scanner=scanner).index_folder(
+                self.folder,
+                progress_callback=progress_callback,
+                cancel_checker=lambda: not self.state.checkpoint(),
+            )
             if self.state.is_cancelled:
                 return WorkerResult(status="cancelled", payload=summary)
             return WorkerResult(status="completed", payload=summary)

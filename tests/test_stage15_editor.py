@@ -6,6 +6,7 @@ import tempfile
 import time
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
@@ -15,6 +16,7 @@ from app.editor.safe_save_service import SafeSaveError, SafeSaveService
 from app.editor.text_file_loader import TextFileLoader
 from app.storage.database import Database
 from app.workers.index_worker import IndexWorker
+from app.workers.worker_state import WorkerResult
 
 PYSIDE6_AVAILABLE = importlib.util.find_spec("PySide6") is not None
 
@@ -173,6 +175,32 @@ class EditorPanelTests(unittest.TestCase):
             self.assertEqual(panel.text_edit.textCursor().selectedText(), "personal")
             self.assertEqual(panel.text_edit.textCursor().selectionStart(), second)
             panel.deleteLater()
+
+    def test_editor_panel_reports_partial_save_when_reindex_fails_or_is_cancelled(self) -> None:
+        for status in ("failed", "cancelled"):
+            with self.subTest(status=status), tempfile.TemporaryDirectory(dir=Path.cwd()) as temp_dir:
+                root = Path(temp_dir)
+                note = root / "note.txt"
+                note.write_text("hello", encoding="utf-8")
+                paths = AppPaths(base_dir=root, portable=True)
+                panel = EditorPanel(load_i18n("en"), paths=paths)
+                panel.load_path(note)
+                saved = []
+                partial = []
+                panel.saved.connect(saved.append)
+                panel.save_partial.connect(lambda path, result_status: partial.append((path, result_status)))
+
+                fake_result = type("Result", (), {
+                    "reindex_result": WorkerResult(status=status),
+                })()
+                with patch("app.ui.editor_panel.SafeSaveService") as service_type:
+                    service_type.return_value.save.return_value = fake_result
+                    panel.save()
+
+                self.assertEqual(saved, [])
+                self.assertEqual(partial, [(note, status)])
+                self.assertEqual(note.read_text(encoding="utf-8"), "hello")
+                panel.deleteLater()
 if __name__ == "__main__":
     unittest.main()
 

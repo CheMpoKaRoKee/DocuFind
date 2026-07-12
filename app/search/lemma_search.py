@@ -32,7 +32,9 @@ class LemmaSearch:
         placeholders = ", ".join("?" for _ in lemmas)
         rows = connection.execute(
             f"""
-            SELECT c.document_id, c.id AS chunk_id, c.text, c.char_start AS chunk_char_start
+            SELECT c.document_id, c.id AS chunk_id, c.text,
+                   c.char_start AS chunk_char_start, c.line_start AS chunk_line_start,
+                   c.column_start AS chunk_column_start
             FROM chunks c
             JOIN documents d ON d.id = c.document_id
             WHERE d.index_status = 'indexed' {where}
@@ -54,7 +56,12 @@ class LemmaSearch:
             document_id = int(row["document_id"])
             chunk_id = int(row["chunk_id"])
             chunk_offset = int(row["chunk_char_start"] or 0)
-            for occurrence in self.locator.locate_lemmas(row["text"], lemmas):
+            line_offset = int(row["chunk_line_start"] or 1) - 1
+            column_offset = int(row["chunk_column_start"] or 1) - 1
+            for occurrence in self.locator.locate_lemmas(
+                row["text"], lemmas, line_number_offset=line_offset,
+                first_line_column_offset=column_offset,
+            ):
                 results.setdefault(document_id, []).append(
                     ContentMatch(
                         document_id=document_id,
@@ -76,9 +83,10 @@ def _query_lemmas(query: SearchQuery) -> list[str]:
     seen: set[str] = set()
     result: list[str] = []
     for group in query.groups:
+        if group.is_phrase:
+            continue
         for lemma in group.lemmas:
             if lemma not in seen:
                 seen.add(lemma)
                 result.append(lemma)
     return result
-

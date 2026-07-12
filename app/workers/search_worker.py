@@ -49,7 +49,7 @@ class SearchWorker:
                 max_matches_per_document=settings.matches_per_file_limit,
             )
             with self.database.session() as connection:
-                results = service.search(connection, self.query)
+                results = service.search(connection, self.query, cancel_checker=lambda: not self.state.checkpoint())
             if self.state.is_cancelled:
                 return WorkerResult(status="cancelled", payload=results)
             return WorkerResult(status="completed", payload=results)

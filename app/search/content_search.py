@@ -34,7 +34,9 @@ class ContentSearch:
         where, params = _document_filters(query)
         rows = connection.execute(
             f"""
-            SELECT d.id AS document_id, c.id AS chunk_id, c.text, c.char_start AS chunk_char_start
+            SELECT d.id AS document_id, c.id AS chunk_id, c.text,
+                   c.char_start AS chunk_char_start, c.line_start AS chunk_line_start,
+                   c.column_start AS chunk_column_start
             FROM chunks_fts
             JOIN chunks c ON c.id = chunks_fts.chunk_id
             JOIN documents d ON d.id = c.document_id
@@ -50,9 +52,14 @@ class ContentSearch:
             document_id = int(row["document_id"])
             chunk_id = int(row["chunk_id"])
             chunk_offset = int(row["chunk_char_start"] or 0)
+            line_offset = int(row["chunk_line_start"] or 1) - 1
+            column_offset = int(row["chunk_column_start"] or 1) - 1
             for group in query.groups:
                 terms = group.variants if group.is_phrase else group.variants
-                for occurrence in self.locator.locate_exact(row["text"], terms, is_phrase=group.is_phrase):
+                for occurrence in self.locator.locate_exact(
+                    row["text"], terms, is_phrase=group.is_phrase,
+                    line_number_offset=line_offset, first_line_column_offset=column_offset,
+                ):
                     results.setdefault(document_id, []).append(
                         ContentMatch(
                             document_id=document_id,
@@ -68,4 +75,3 @@ class ContentSearch:
                         )
                     )
         return results
-

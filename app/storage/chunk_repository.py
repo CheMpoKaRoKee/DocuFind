@@ -16,8 +16,11 @@ class ChunkRepository:
         for chunk in chunks:
             cursor = self.connection.execute(
                 """
-                INSERT INTO chunks(document_id, chunk_index, text, line_start, line_end, char_start, char_end)
-                VALUES (?, ?, ?, ?, ?, ?, ?)
+                INSERT INTO chunks(
+                    document_id, chunk_index, text, line_start, line_end,
+                    char_start, char_end, column_start
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     document_id,
@@ -27,6 +30,7 @@ class ChunkRepository:
                     chunk.get("line_end"),
                     chunk.get("char_start"),
                     chunk.get("char_end"),
+                    chunk.get("column_start", 1),
                 ),
             )
             chunk_ids.append(int(cursor.lastrowid))
@@ -39,4 +43,3 @@ class ChunkRepository:
                 (document_id,),
             )
         )
-

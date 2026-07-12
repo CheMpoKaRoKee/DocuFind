@@ -6,6 +6,12 @@
 
 ---
 
+## Русский
+
+DocuFind Local — локальное Windows-приложение для индексации папок и поиска по имени, пути и содержимому файлов. Данные не отправляются во внешние сервисы. Для запуска из исходников установите зависимости командой `python -m pip install -e ".[dev]"`, затем выполните `python -m app.main`. Сборка Windows EXE: `py -3.13 build_exe.py`.
+
+## English
+
 ## Why this project exists
 
 Windows file search is often too limited when a user needs to find an exact text fragment inside local folders, especially with Russian word forms or typos. DocuFind Local provides a local-first search workflow with preview, match positions, and safe editing for supported text files.

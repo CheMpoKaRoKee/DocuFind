@@ -170,8 +170,9 @@ class SettingsDialog(QDialog):
         with self.database.session() as connection:
             save_settings(SettingsRepository(connection), settings)
             folder_repo = IndexFolderRepository(connection)
-            for folder in settings.index_folders:
-                folder_repo.add(folder, normalize_path(Path(folder)), enabled=True)
+            folder_repo.sync_enabled(
+                (folder, normalize_path(Path(folder))) for folder in settings.index_folders
+            )
         self.settings = settings
         self.language_changed.emit(settings.language)
         self.settings_saved.emit(settings)
@@ -180,27 +181,7 @@ class SettingsDialog(QDialog):
     def _load_settings(self) -> ApplicationSettings:
         with self.database.session() as connection:
             settings = load_settings(SettingsRepository(connection), self.paths)
-            if settings.index_folders:
-                return settings
-            rows = connection.execute("SELECT path FROM index_folders WHERE enabled = 1 ORDER BY path_norm").fetchall()
-        if not rows:
-            return settings
-        return ApplicationSettings(
-            index_folders=[str(row["path"]) for row in rows],
-            excluded_folders=settings.excluded_folders,
-            max_index_file_size_mb=settings.max_index_file_size_mb,
-            enabled_extensions=settings.enabled_extensions,
-            fuzzy_enabled=settings.fuzzy_enabled,
-            fuzzy_filename_threshold=settings.fuzzy_filename_threshold,
-            fuzzy_content_threshold=settings.fuzzy_content_threshold,
-            search_result_limit=settings.search_result_limit,
-            matches_per_file_limit=settings.matches_per_file_limit,
-            language=settings.language,
-            backup_enabled=settings.backup_enabled,
-            backup_path=settings.backup_path,
-            backup_retention_days=settings.backup_retention_days,
-            backup_max_size_mb=settings.backup_max_size_mb,
-        )
+        return settings
 
 
 def _spinbox(parent, minimum: int, maximum: int) -> QSpinBox:

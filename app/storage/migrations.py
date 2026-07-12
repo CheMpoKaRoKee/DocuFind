@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import sqlite3
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 3
 
 SCHEMA_SQL = """
 CREATE TABLE IF NOT EXISTS schema_migrations (
@@ -30,6 +30,13 @@ CREATE TABLE IF NOT EXISTS index_runs (
     files_indexed INTEGER DEFAULT 0,
     files_skipped INTEGER DEFAULT 0,
     files_failed INTEGER DEFAULT 0,
+    files_new INTEGER DEFAULT 0,
+    files_changed INTEGER DEFAULT 0,
+    files_unchanged INTEGER DEFAULT 0,
+    files_deleted INTEGER DEFAULT 0,
+    files_restored INTEGER DEFAULT 0,
+    files_stale INTEGER DEFAULT 0,
+    files_reindexed INTEGER DEFAULT 0,
     FOREIGN KEY(folder_id) REFERENCES index_folders(id)
 );
 
@@ -47,6 +54,11 @@ CREATE TABLE IF NOT EXISTS documents (
     modified_ns INTEGER,
     indexed_at TEXT NOT NULL,
     last_seen_at TEXT NOT NULL,
+    last_verified_at TEXT,
+    last_missing_at TEXT,
+    payload_retained INTEGER DEFAULT 0,
+    state_reason TEXT,
+    stale_detected_at TEXT,
     content_hash TEXT,
     encoding TEXT,
     line_ending TEXT,
@@ -67,6 +79,7 @@ CREATE TABLE IF NOT EXISTS chunks (
     line_end INTEGER,
     char_start INTEGER,
     char_end INTEGER,
+    column_start INTEGER NOT NULL DEFAULT 1,
     FOREIGN KEY(document_id) REFERENCES documents(id) ON DELETE CASCADE
 );
 
@@ -138,6 +151,22 @@ CREATE TABLE IF NOT EXISTS settings (
     value TEXT NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS reindex_queue (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    path TEXT NOT NULL,
+    path_norm TEXT NOT NULL,
+    document_id INTEGER,
+    reason TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'pending',
+    priority INTEGER NOT NULL DEFAULT 100,
+    attempts INTEGER NOT NULL DEFAULT 0,
+    last_error TEXT,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    locked_at TEXT,
+    FOREIGN KEY(document_id) REFERENCES documents(id)
+);
+
 CREATE INDEX IF NOT EXISTS idx_documents_folder_id ON documents(folder_id);
 CREATE INDEX IF NOT EXISTS idx_documents_extension_norm ON documents(extension_norm);
 CREATE INDEX IF NOT EXISTS idx_documents_index_status ON documents(index_status);
@@ -148,6 +177,29 @@ CREATE INDEX IF NOT EXISTS idx_document_lemmas_lookup ON document_lemmas(source,
 CREATE INDEX IF NOT EXISTS idx_indexed_terms_fuzzy ON indexed_terms(source, length, first_char);
 CREATE INDEX IF NOT EXISTS idx_indexed_lemmas_fuzzy ON indexed_lemmas(source, length, first_char);
 CREATE INDEX IF NOT EXISTS idx_index_errors_run_id ON index_errors(run_id);
+CREATE INDEX IF NOT EXISTS idx_reindex_queue_status_priority
+ON reindex_queue(status, priority, created_at);
+"""
+
+MIGRATION_2_SQL = """
+CREATE TABLE IF NOT EXISTS reindex_queue (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    path TEXT NOT NULL,
+    path_norm TEXT NOT NULL,
+    document_id INTEGER,
+    reason TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'pending',
+    priority INTEGER NOT NULL DEFAULT 100,
+    attempts INTEGER NOT NULL DEFAULT 0,
+    last_error TEXT,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    locked_at TEXT,
+    FOREIGN KEY(document_id) REFERENCES documents(id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_reindex_queue_status_priority
+ON reindex_queue(status, priority, created_at);
 """
 
 
@@ -162,7 +214,36 @@ def migrate(connection: sqlite3.Connection) -> None:
 
     current = connection.execute("SELECT MAX(version) AS version FROM schema_migrations").fetchone()["version"]
     if current is None or current < SCHEMA_VERSION:
-        connection.executescript(SCHEMA_SQL)
+        if current is None or current < 2:
+            _migrate_to_2(connection)
+        if current is None or current < 3:
+            _migrate_to_3(connection)
         connection.execute("INSERT OR IGNORE INTO schema_migrations(version) VALUES (?)", (SCHEMA_VERSION,))
+
+
+def _migrate_to_2(connection: sqlite3.Connection) -> None:
+    _add_column_if_missing(connection, "documents", "last_verified_at", "TEXT")
+    _add_column_if_missing(connection, "documents", "last_missing_at", "TEXT")
+    _add_column_if_missing(connection, "documents", "payload_retained", "INTEGER DEFAULT 0")
+    _add_column_if_missing(connection, "documents", "state_reason", "TEXT")
+    _add_column_if_missing(connection, "documents", "stale_detected_at", "TEXT")
+    _add_column_if_missing(connection, "index_runs", "files_new", "INTEGER DEFAULT 0")
+    _add_column_if_missing(connection, "index_runs", "files_changed", "INTEGER DEFAULT 0")
+    _add_column_if_missing(connection, "index_runs", "files_unchanged", "INTEGER DEFAULT 0")
+    _add_column_if_missing(connection, "index_runs", "files_deleted", "INTEGER DEFAULT 0")
+    _add_column_if_missing(connection, "index_runs", "files_restored", "INTEGER DEFAULT 0")
+    _add_column_if_missing(connection, "index_runs", "files_stale", "INTEGER DEFAULT 0")
+    _add_column_if_missing(connection, "index_runs", "files_reindexed", "INTEGER DEFAULT 0")
+    connection.executescript(MIGRATION_2_SQL)
+
+
+def _migrate_to_3(connection: sqlite3.Connection) -> None:
+    _add_column_if_missing(connection, "chunks", "column_start", "INTEGER NOT NULL DEFAULT 1")
+
+
+def _add_column_if_missing(connection: sqlite3.Connection, table: str, column: str, definition: str) -> None:
+    columns = {str(row["name"]) for row in connection.execute(f"PRAGMA table_info({table})")}
+    if column not in columns:
+        connection.execute(f"ALTER TABLE {table} ADD COLUMN {column} {definition}")
 
 

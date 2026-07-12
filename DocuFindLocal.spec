@@ -19,7 +19,7 @@ a = Analysis(
     ["app/main.py"],
     pathex=[],
     binaries=[],
-    datas=[("app/i18n/*.json", "app/i18n"), *pymorphy_datas],
+    datas=[("app/i18n/*.json", "app/i18n"), ("app/assets/library-building.png", "app/assets"), *pymorphy_datas],
     hiddenimports=app_hiddenimports,
     hookspath=[],
     hooksconfig={},
@@ -50,5 +50,6 @@ exe = EXE(
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
+    icon="app/assets/library-building.png",
 )
 

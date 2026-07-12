@@ -10,17 +10,24 @@ from app.utils.logger import get_logger
 from app.utils.path_rules import PathRules, read_file_attributes
 
 
+class FolderScanError(RuntimeError):
+    """Raised when the filesystem scan cannot provide a complete result."""
+
+
 class FolderScanner:
     def __init__(self, file_filter: FileFilter | None = None, path_rules: PathRules | None = None) -> None:
         self.path_rules = path_rules or PathRules()
         self.file_filter = file_filter or FileFilter(path_rules=self.path_rules)
         self.logger = get_logger("indexing")
+        self.unavailable_subtrees: list[Path] = []
 
     def scan(self, root: Path) -> Iterator[FileFilterResult]:
         root = Path(root)
+        self.unavailable_subtrees = []
         if not root.exists() or not root.is_dir():
-            self.logger.warning("Scan root is not a directory: path=%s", root)
-            return
+            message = f"Scan root is not a directory: {root}"
+            self.logger.error(message)
+            raise FolderScanError(message)
 
         stack = [root]
         while stack:
@@ -33,8 +40,12 @@ class FolderScanner:
                         continue
                     if child.is_file():
                         yield self.file_filter.evaluate(child)
-            except OSError:
-                self.logger.warning("Cannot scan directory: path=%s", current)
+            except OSError as exc:
+                message = f"Cannot scan directory: {current}: {exc}"
+                self.logger.error(message)
+                if current == root:
+                    raise FolderScanError(message) from exc
+                self.unavailable_subtrees.append(current)
 
     def _should_enter_dir(self, path: Path) -> bool:
         attributes = read_file_attributes(path)
@@ -48,4 +59,3 @@ class FolderScanner:
             self.logger.info("Directory skipped: status=skipped_system_file path=%s", path)
             return False
         return True
-

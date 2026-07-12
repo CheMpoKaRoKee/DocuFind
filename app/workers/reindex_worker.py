@@ -9,6 +9,10 @@ from app.storage.database import Database
 from app.workers.worker_state import WorkerResult, WorkerState
 
 
+class ReindexCancelled(Exception):
+    """Cancellation observed before the single-file transaction committed."""
+
+
 class ReindexWorker:
     def __init__(self, database: Database, file_path: Path, *, state: WorkerState | None = None) -> None:
         self.database = database
@@ -28,11 +32,19 @@ class ReindexWorker:
         if not self.state.checkpoint():
             return WorkerResult(status="cancelled")
         try:
-            summary = IndexService(self.database).reindex_file(self.file_path)
-            if self.state.is_cancelled:
-                return WorkerResult(status="cancelled", payload=summary)
+            summary = IndexService(self.database).reindex_file(
+                self.file_path,
+                cancel_checker=self._checkpoint,
+            )
             return WorkerResult(status="completed", payload=summary)
+        except ReindexCancelled:
+            return WorkerResult(status="cancelled")
         except Exception as exc:
             return WorkerResult(status="failed", error=str(exc))
+
+    def _checkpoint(self) -> bool:
+        if not self.state.checkpoint():
+            raise ReindexCancelled()
+        return True
 
 

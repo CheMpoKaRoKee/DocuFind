@@ -5,7 +5,7 @@ import unittest
 from pathlib import Path
 
 from app.indexer.file_filter import FileFilter
-from app.indexer.folder_scanner import FolderScanner
+from app.indexer.folder_scanner import FolderScanError, FolderScanner
 from app.utils.path_rules import PathRules
 
 
@@ -76,6 +76,12 @@ class ScannerFilterTests(unittest.TestCase):
 
             self.assertEqual([result.path.name for result in results], ["keep.md"])
             self.assertTrue(results[0].can_index)
+
+    def test_missing_root_is_a_scan_error(self) -> None:
+        missing = Path.cwd() / "folder-that-does-not-exist"
+
+        with self.assertRaises(FolderScanError):
+            list(FolderScanner().scan(missing))
 
     def test_symlink_file_is_skipped_when_available(self) -> None:
         with tempfile.TemporaryDirectory(dir=Path.cwd()) as temp_dir:

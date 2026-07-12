@@ -22,6 +22,7 @@ from app.utils.app_paths import AppPaths
 
 class EditorPanel(QWidget):
     saved = Signal(Path)
+    save_partial = Signal(Path, str)
     save_failed = Signal(str)
 
     def __init__(
@@ -144,13 +145,23 @@ class EditorPanel(QWidget):
                 database=self.database,
                 backup_enabled=self.settings.backup_enabled,
             )
-            service.save(self.snapshot, self.text_edit.toPlainText())
+            result = service.save(self.snapshot, self.text_edit.toPlainText())
         except SafeSaveError as exc:
             self.mode = exc.mode
             self.text_edit.setReadOnly(True)
             self._render_mode(str(exc))
             self.save_failed.emit(str(exc))
             return
+        reindex_result = result.reindex_result
+        if reindex_result is not None and reindex_result.status != "completed":
+            # The atomic file replacement has already succeeded.  Do not report
+            # a full save and do not roll the user's file back because reindexing
+            # failed or was cancelled.
+            self.load_path(self.snapshot.path)
+            self._go_to_current_match()
+            self.save_partial.emit(self.snapshot.path, reindex_result.status)
+            return
+
         self.saved.emit(self.snapshot.path)
         self.load_path(self.snapshot.path)
         self._go_to_current_match()

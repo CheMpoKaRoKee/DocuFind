@@ -14,6 +14,7 @@ class TextChunk:
     line_end: int
     char_start: int
     char_end: int
+    column_start: int
 
 
 class Chunker:
@@ -50,6 +51,7 @@ class Chunker:
                 line_end=_line_for_char(line_starts, max(current_end - 1, current_start)),
                 char_start=current_start,
                 char_end=current_end,
+                column_start=_column_for_char(text, current_start),
             )
             chunks.append(chunk)
             current_text = ""
@@ -116,3 +118,8 @@ def _line_starts(text: str) -> list[int]:
 
 def _line_for_char(line_starts: list[int], char_index: int) -> int:
     return bisect_right(line_starts, char_index) or 1
+
+
+def _column_for_char(text: str, char_index: int) -> int:
+    last_newline = text.rfind("\n", 0, char_index)
+    return char_index - last_newline

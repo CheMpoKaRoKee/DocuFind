@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import sqlite3
 from datetime import UTC, datetime
+from collections.abc import Iterable
 
 
 class IndexFolderRepository:
@@ -29,3 +30,19 @@ class IndexFolderRepository:
     def list_enabled(self) -> list[sqlite3.Row]:
         return list(self.connection.execute("SELECT * FROM index_folders WHERE enabled = 1 ORDER BY path_norm"))
 
+    def sync_enabled(self, paths: Iterable[tuple[str, str]]) -> None:
+        """Make enabled folder state exactly match settings without deleting index data."""
+        desired = list(paths)
+        self.connection.execute("UPDATE index_folders SET enabled = 0 WHERE enabled = 1")
+        for path, path_norm in desired:
+            row = self.connection.execute(
+                "SELECT id FROM index_folders WHERE path_norm = ? ORDER BY id LIMIT 1",
+                (path_norm,),
+            ).fetchone()
+            if row is None:
+                self.add(path, path_norm, enabled=True)
+            else:
+                self.connection.execute(
+                    "UPDATE index_folders SET path = ?, path_norm = ?, enabled = 1 WHERE id = ?",
+                    (path, path_norm, int(row["id"])),
+                )

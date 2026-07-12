@@ -38,6 +38,11 @@ py -3.13 -m app.main
 - typo/fuzzy запрос возвращает ожидаемые близкие совпадения;
 - preview показывает фрагмент;
 - editor открывает `.txt`/`.md`, сохраняет файл, создаёт backup и после сохранения результат переиндексируется;
+- если файл сохранён, но reindex завершился failed/cancelled, UI сообщает о частичном успехе и не выдаёт ложный `saved`;
+- cancel во время search и single-file reindex не показывает completed;
+- очистка списка индексируемых папок сохраняется после закрытия и повторного открытия настроек, без удаления index payload;
+- недоступный subtree записывается как ошибка и не вызывает ложное удаление документов внутри него;
+- совпадение во втором/последующем chunk показывает абсолютные line/column и выделяет правильный диапазон;
 - если файл изменён внешне перед сохранением, editor блокирует save до reload.
 
 ### 4. Ручной smoke test executable
@@ -98,6 +103,11 @@ Check:
 - typo/fuzzy query returns expected close matches;
 - preview shows a fragment;
 - editor opens `.txt`/`.md`, saves, creates a backup, and reindexes after save;
+- if the file is saved but reindexing fails/is cancelled, the UI reports partial success and does not emit a false `saved` state;
+- cancelling search or single-file reindex must not show completed;
+- clearing indexed folders survives closing and reopening settings without deleting index payload;
+- an unavailable subtree is recorded as an error and does not falsely delete documents beneath it;
+- a match in the second or later chunk shows absolute line/column and selects the correct range;
 - external file changes block save until reload.
 
 ### 4. Manual Executable Smoke Test

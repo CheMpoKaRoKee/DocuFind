@@ -31,6 +31,7 @@ class ChunkerTests(unittest.TestCase):
 
         self.assertEqual([chunk.text for chunk in chunks], ["abcd", "efgh", "i"])
         self.assertEqual([(chunk.line_start, chunk.line_end) for chunk in chunks], [(1, 1), (1, 1), (1, 1)])
+        self.assertEqual([chunk.column_start for chunk in chunks], [1, 5, 9])
 
     def test_rejects_invalid_overlap(self) -> None:
         with self.assertRaises(ValueError):
@@ -39,4 +40,3 @@ class ChunkerTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
-

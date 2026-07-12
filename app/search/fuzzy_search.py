@@ -161,7 +161,9 @@ class FuzzySearch:
         where, params = _document_filters(query)
         rows = connection.execute(
             f"""
-            SELECT c.document_id, c.id AS chunk_id, c.text, c.char_start AS chunk_char_start
+            SELECT c.document_id, c.id AS chunk_id, c.text,
+                   c.char_start AS chunk_char_start, c.line_start AS chunk_line_start,
+                   c.column_start AS chunk_column_start
             FROM chunks c
             JOIN documents d ON d.id = c.document_id
             WHERE d.index_status = 'indexed' {where}
@@ -183,9 +185,17 @@ class FuzzySearch:
             document_id = int(row["document_id"])
             chunk_id = int(row["chunk_id"])
             chunk_offset = int(row["chunk_char_start"] or 0)
+            line_offset = int(row["chunk_line_start"] or 1) - 1
+            column_offset = int(row["chunk_column_start"] or 1) - 1
             occurrences = [
-                *self.locator.locate_exact(row["text"], [candidate.value]),
-                *self.locator.locate_lemmas(row["text"], [candidate.value]),
+                *self.locator.locate_exact(
+                    row["text"], [candidate.value], line_number_offset=line_offset,
+                    first_line_column_offset=column_offset,
+                ),
+                *self.locator.locate_lemmas(
+                    row["text"], [candidate.value], line_number_offset=line_offset,
+                    first_line_column_offset=column_offset,
+                ),
             ]
             for occurrence in occurrences:
                 results.setdefault(document_id, []).append(
@@ -224,4 +234,3 @@ def _load_rapid_ratio():
         return fuzz.ratio
     except Exception:
         return None
-

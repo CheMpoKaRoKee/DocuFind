@@ -29,6 +29,13 @@ class IndexRunRepository:
         files_indexed: int,
         files_skipped: int,
         files_failed: int,
+        files_new: int = 0,
+        files_changed: int = 0,
+        files_unchanged: int = 0,
+        files_deleted: int = 0,
+        files_restored: int = 0,
+        files_stale: int = 0,
+        files_reindexed: int = 0,
     ) -> None:
         self.connection.execute(
             """
@@ -38,7 +45,14 @@ class IndexRunRepository:
                 files_seen = ?,
                 files_indexed = ?,
                 files_skipped = ?,
-                files_failed = ?
+                files_failed = ?,
+                files_new = ?,
+                files_changed = ?,
+                files_unchanged = ?,
+                files_deleted = ?,
+                files_restored = ?,
+                files_stale = ?,
+                files_reindexed = ?
             WHERE id = ?
             """,
             (
@@ -48,7 +62,13 @@ class IndexRunRepository:
                 files_indexed,
                 files_skipped,
                 files_failed,
+                files_new,
+                files_changed,
+                files_unchanged,
+                files_deleted,
+                files_restored,
+                files_stale,
+                files_reindexed,
                 run_id,
             ),
         )
-
