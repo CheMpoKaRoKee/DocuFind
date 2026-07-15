@@ -10,6 +10,25 @@ from app.utils.path_rules import PathRules
 
 
 class ScannerFilterTests(unittest.TestCase):
+    def test_scan_paths_does_not_run_expensive_file_filter(self) -> None:
+        class CountingFilter:
+            def __init__(self) -> None:
+                self.calls = 0
+
+            def evaluate(self, path: Path):
+                self.calls += 1
+                return FileFilter().evaluate(path)
+
+        with tempfile.TemporaryDirectory(dir=Path.cwd()) as temp_dir:
+            root = Path(temp_dir)
+            (root / "a.txt").write_text("a", encoding="utf-8")
+            file_filter = CountingFilter()
+            scanner = FolderScanner(file_filter=file_filter)
+
+            paths = list(scanner.scan_paths(root))
+
+            self.assertEqual(paths, [root / "a.txt"])
+            self.assertEqual(file_filter.calls, 0)
     def test_supported_text_file_is_indexed(self) -> None:
         with tempfile.TemporaryDirectory(dir=Path.cwd()) as temp_dir:
             path = Path(temp_dir) / "note.md"

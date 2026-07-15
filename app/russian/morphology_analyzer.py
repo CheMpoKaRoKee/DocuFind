@@ -19,26 +19,37 @@ class MorphologyAnalyzer:
     def __init__(self) -> None:
         self.logger = get_logger("morphology")
         self._morph = self._load_pymorphy3()
+        self._cache: dict[str, MorphologyResult] = {}
         self.source = "pymorphy3" if self._morph is not None else "fallback"
         if self._morph is None and self.logger.hasHandlers():
             self.logger.warning("pymorphy3 is unavailable; using fallback Russian morphology")
 
     def normalize(self, token: str) -> MorphologyResult:
         normalized = token.casefold().replace("ё", "е")
+        cached = self._cache.get(normalized)
+        if cached is not None:
+            return cached
         if not normalized:
-            return MorphologyResult(token=token, lemma=normalized, source=self.source)
+            return self._remember(normalized, normalized)
 
         domain_lemma = _domain_lemma(normalized)
         if domain_lemma is not None:
-            return MorphologyResult(token=token, lemma=domain_lemma, source=self.source)
+            return self._remember(normalized, domain_lemma)
 
         if self._morph is not None:
             parsed = self._morph.parse(normalized)
             if parsed:
                 best = _select_parse(parsed)
-                return MorphologyResult(token=token, lemma=best.normal_form.replace("ё", "е"), source=self.source)
+                return self._remember(normalized, best.normal_form.replace("ё", "е"))
 
-        return MorphologyResult(token=token, lemma=_fallback_lemma(normalized), source=self.source)
+        return self._remember(normalized, _fallback_lemma(normalized))
+
+    def _remember(self, token: str, lemma: str) -> MorphologyResult:
+        if len(self._cache) >= 100_000:
+            self._cache.clear()
+        result = MorphologyResult(token=token, lemma=lemma, source=self.source)
+        self._cache[token] = result
+        return result
 
     @staticmethod
     def _load_pymorphy3():

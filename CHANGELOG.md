@@ -4,6 +4,8 @@ All notable changes to DocuFind Local are documented here.
 
 ## 2026-07-13
 
+- Optimized large-folder indexing by making the counting pass metadata-only, caching repeated morphology, reusing extraction hashes, and removing redundant payload deletes.
+- Sanitized HTML markup and non-visible script/style content while preserving source offsets; blank HTML chunks are no longer stored in FTS.
 - Added honest save/reindex partial-success states and cooperative cancellation checkpoints.
 - Added synchronized indexed-folder state and safe handling of inaccessible roots and subtrees.
 - Fixed absolute line, column, and character coordinates for exact, lemma, and fuzzy matches.
@@ -11,7 +13,7 @@ All notable changes to DocuFind Local are documented here.
 - Simplified the UI to Results and Editor tabs and added an Explorer button to every result.
 - Removed duplicate result rendering and nested result-card backgrounds.
 - Added the supplied PNG as the application and Windows executable icon.
-- Passed the full 104-test suite and rebuilt the Windows executable.
+- Passed the full 108-test suite and rebuilt the Windows executable.
 
 ## 0.1.0 — MVP
 

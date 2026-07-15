@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import hashlib
 from pathlib import Path
+import re
 
 from app.indexer.file_filter import MAX_INDEX_FILE_SIZE_BYTES, SUPPORTED_EXTENSIONS
 from app.utils.encoding_detector import EncodingDetector
@@ -17,6 +19,7 @@ class ExtractedText:
     encoding: str
     line_ending: str
     long_line_count: int = 0
+    content_hash: str | None = None
 
 
 class TextExtractionError(Exception):
@@ -63,11 +66,30 @@ class TextExtractor:
             raise TextExtractionError("error_decode", str(exc)) from exc
 
         line_ending = self.line_ending_detector.detect(text)
+        if path.suffix.casefold() in {".html", ".htm"}:
+            text = _sanitize_html(text)
         processed = self.long_line_handler.process(text)
         return ExtractedText(
             text=processed.text,
             encoding=encoding,
             line_ending=line_ending,
             long_line_count=processed.long_line_count,
+            content_hash=hashlib.sha256(data).hexdigest(),
         )
 
+
+_HIDDEN_HTML_RE = re.compile(
+    r"<(script|style|noscript|svg)\b[^>]*>.*?</\1\s*>",
+    flags=re.IGNORECASE | re.DOTALL,
+)
+_HTML_MARKUP_RE = re.compile(r"<!--.*?-->|<![^>]*>|<[^>]+>", flags=re.DOTALL)
+
+
+def _sanitize_html(text: str) -> str:
+    """Remove non-visible HTML while preserving source offsets and lines."""
+    text = _HIDDEN_HTML_RE.sub(_blank_preserving_newlines, text)
+    return _HTML_MARKUP_RE.sub(_blank_preserving_newlines, text)
+
+
+def _blank_preserving_newlines(match: re.Match[str]) -> str:
+    return "".join(char if char in "\r\n" else " " for char in match.group(0))

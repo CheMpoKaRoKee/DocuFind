@@ -10,6 +10,23 @@ from app.storage.database import Database
 
 
 class SearchCoreTests(unittest.TestCase):
+    def test_html_indexes_visible_text_but_not_script_payload(self) -> None:
+        with tempfile.TemporaryDirectory(dir=Path.cwd()) as temp_dir:
+            root = Path(temp_dir)
+            target = root / "page.html"
+            source = "<html><body>visible phrase<script>hidden_script_noise</script></body></html>"
+            target.write_text(source, encoding="utf-8")
+            db = Database(root / "data" / "docufind.db")
+            IndexService(db).index_folder(root)
+
+            with db.session() as connection:
+                visible = SearchService().search(connection, "visible")
+                hidden = SearchService().search(connection, "hidden_script_noise")
+
+            self.assertEqual(len(visible), 1)
+            self.assertEqual(visible[0].content_matches[0].char_start, source.index("visible"))
+            self.assertEqual(hidden, [])
+
     def test_match_column_is_absolute_when_chunk_starts_inside_long_line(self) -> None:
         with tempfile.TemporaryDirectory(dir=Path.cwd()) as temp_dir:
             root = Path(temp_dir)

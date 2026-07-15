@@ -2,6 +2,7 @@
 
 import tempfile
 import unittest
+import hashlib
 from pathlib import Path
 
 from app.indexer.text_extractor import TextExtractionError, TextExtractor
@@ -67,6 +68,21 @@ class TextExtractionTests(unittest.TestCase):
                 TextExtractor().extract(path)
 
             self.assertEqual(error.exception.status, "skipped_unsupported_extension")
+
+    def test_html_removes_markup_and_scripts_without_changing_offsets(self) -> None:
+        with tempfile.TemporaryDirectory(dir=Path.cwd()) as temp_dir:
+            path = Path(temp_dir) / "page.html"
+            source = '<html><style>.noise{color:red}</style><body>Hello <b>world</b><script>very slow noise</script></body></html>'
+            path.write_text(source, encoding="utf-8")
+
+            result = TextExtractor().extract(path)
+
+            self.assertEqual(len(result.text), len(source))
+            self.assertEqual(result.text.index("Hello"), source.index("Hello"))
+            self.assertEqual(result.text.index("world"), source.index("world"))
+            self.assertNotIn("noise", result.text)
+            self.assertNotIn("<b>", result.text)
+            self.assertEqual(result.content_hash, hashlib.sha256(source.encode("utf-8")).hexdigest())
 
 
 if __name__ == "__main__":

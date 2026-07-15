@@ -103,7 +103,7 @@ class IndexService:
         _emit(progress_callback, "scanning", counters, files_total=files_total, started_at=started_at)
         files_total = 0
         try:
-            for filter_result in self.scanner.scan(folder):
+            for path in self.scanner.scan_paths(folder):
                 if cancel_checker is not None and cancel_checker():
                     _emit(progress_callback, "cancelled", counters, files_total=files_total, started_at=started_at)
                     return _summary(counters)
@@ -114,7 +114,7 @@ class IndexService:
                         "scanning",
                         counters,
                         files_total=None,
-                        current_path=str(filter_result.path),
+                        current_path=str(path),
                         started_at=started_at,
                         message=str(files_total),
                     )
@@ -391,7 +391,7 @@ class IndexService:
         stat_result = path.stat()
         attributes = read_file_attributes(path)
         now = datetime.now(UTC).isoformat()
-        chunks = self.chunker.chunk(extracted.text)
+        chunks = [chunk for chunk in self.chunker.chunk(extracted.text) if chunk.text.strip()]
 
         document_id = DocumentRepository(connection).upsert(
             {
@@ -412,7 +412,7 @@ class IndexService:
                 "payload_retained": 1,
                 "state_reason": None,
                 "stale_detected_at": None,
-                "content_hash": _content_hash(path),
+                "content_hash": extracted.content_hash or _content_hash(path),
                 "encoding": extracted.encoding,
                 "line_ending": extracted.line_ending,
                 "is_hidden": int(attributes.is_hidden),
@@ -423,7 +423,6 @@ class IndexService:
             }
         )
 
-        self._clear_index_payload(connection, document_id)
         chunk_rows = _chunk_rows(chunks)
         chunk_ids = ChunkRepository(connection).replace_for_document(document_id, chunk_rows)
         fts = FtsRepository(connection)

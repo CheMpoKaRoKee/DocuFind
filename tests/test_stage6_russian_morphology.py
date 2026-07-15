@@ -11,6 +11,29 @@ from app.russian.russian_tokenizer import RussianTokenizer
 
 
 class RussianMorphologyTests(unittest.TestCase):
+    def test_morphology_caches_repeated_tokens(self) -> None:
+        class Parsed:
+            normal_form = "пример"
+
+            class tag:
+                POS = "NOUN"
+
+        class FakeMorph:
+            def __init__(self) -> None:
+                self.calls = 0
+
+            def parse(self, _token: str):
+                self.calls += 1
+                return [Parsed()]
+
+        analyzer = MorphologyAnalyzer()
+        fake = FakeMorph()
+        analyzer._morph = fake
+
+        for _ in range(100):
+            self.assertEqual(analyzer.normalize("примером").lemma, "пример")
+
+        self.assertEqual(fake.calls, 1)
     def test_tokenizer_extracts_russian_tokens(self) -> None:
         tokens = RussianTokenizer().russian_tokens("Final: Персональные данные v2")
 

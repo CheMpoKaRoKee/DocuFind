@@ -22,6 +22,15 @@ class FolderScanner:
         self.unavailable_subtrees: list[Path] = []
 
     def scan(self, root: Path) -> Iterator[FileFilterResult]:
+        for path in self.scan_paths(root):
+            yield self.file_filter.evaluate(path)
+
+    def scan_paths(self, root: Path) -> Iterator[Path]:
+        """Yield file paths without expensive per-file filtering.
+
+        The indexing service uses this for its counting pass so binary reads,
+        attribute checks, and extension filtering happen only once.
+        """
         root = Path(root)
         self.unavailable_subtrees = []
         if not root.exists() or not root.is_dir():
@@ -39,7 +48,7 @@ class FolderScanner:
                             stack.append(child)
                         continue
                     if child.is_file():
-                        yield self.file_filter.evaluate(child)
+                        yield child
             except OSError as exc:
                 message = f"Cannot scan directory: {current}: {exc}"
                 self.logger.error(message)
